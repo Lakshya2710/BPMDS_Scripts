@@ -1,0 +1,15 @@
+Submit the job:
+$ qsub csample.cmd
+
+Check job status:
+$ qstat -an
+
+To delete/cancel a job:
+$ qdel <jobid>
+
+To use Rupesh's group queue add this line on top of .cmd file:
+#PBS -q rupesh_gpuq
+
+
+
+  
