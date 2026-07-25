@@ -380,7 +380,7 @@ def plot_parameter_sensitivity():
 
     axes[0].set(title=r'(a) Gap vs. $\rho$', xlabel=r'$\rho$', ylabel='Gap to BKS (%)')
     axes[0].set_xscale('log')
-    axes[0].set_ylim(4, 22)
+    axes[0].set_ylim(4, 23)
 
     # Panel (b): Exec Time vs Rho
     for filepath in time_files:
@@ -400,7 +400,7 @@ def plot_parameter_sensitivity():
     for ax in (axes[0], axes[1]):
         ax.minorticks_off()
         ax.grid(axis='y', linestyle='--', alpha=0.7)
-        ax.legend(loc='upper right' if ax == axes[0] else 'upper left', fontsize=11, frameon=True, edgecolor='black', borderpad=0.3, labelspacing=0.2)
+        ax.legend(loc='upper left', fontsize=11, frameon=True, framealpha=0.8, edgecolor='black', borderpad=0.3, labelspacing=0.2)
 
     # Panel (c): Speedup vs Threads
     for filepath, label in scaling_instances.items():
@@ -419,7 +419,7 @@ def plot_parameter_sensitivity():
     axes[2].set_ylim(0, 27)
     axes[2].minorticks_off()
     axes[2].grid(axis='y', linestyle='--', alpha=0.7)
-    axes[2].legend(loc='upper left', ncol=2, fontsize=11, frameon=True, edgecolor='black', columnspacing=0.5, borderpad=0.3, labelspacing=0.2, handletextpad=0.3)
+    axes[2].legend(loc='upper left', ncol=2, fontsize=11, frameon=True, framealpha=0.8, edgecolor='black', columnspacing=0.5, borderpad=0.3, labelspacing=0.2, handletextpad=0.3)
 
     plt.tight_layout(pad=0.5, w_pad=1.0, h_pad=1.5)
     out_path = './Plots/Parameter_sensitivity.pdf'
@@ -432,7 +432,7 @@ def plot_time_characteristics():
     """Generates execution time breakdowns according to route size, depot, and customer distributions."""
     print("Running plot_time_characteristics...")
     try:
-        df = pd.read_csv('char.csv')
+        df = pd.read_csv('Outputs/Outputs.csv')
     except FileNotFoundError:
         print("Warning: csv not found.")
         return
