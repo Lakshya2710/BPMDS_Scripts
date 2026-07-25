@@ -40,7 +40,7 @@ def setup_style(style="ticks", font_size=14, labelsize=14, titlesize=15,
 # 1. Plotting Functions
 # ==========================================
 def plot_bucket_analysis():
-    """Generates bucket size distribution and runtime correlation (1x2 grid)."""
+    """Generates bucket size distribution and runtime correlation (1x3 grid)."""
     print("Running plot_bucket_analysis...")
     instances = ['Flanders1', 'Flanders2', 'Brussels1', 'Brussels2']
     all_data = [pd.read_csv(f'./Bucket_metrics/{inst}.csv').assign(Instance=inst) 
@@ -53,33 +53,48 @@ def plot_bucket_analysis():
     # --- KEEP YOUR ORIGINAL STYLE & FIGSIZE HERE ---
     grid_rc = {'axes.grid.axis': 'y', 'grid.linestyle': '--', 'grid.alpha': 0.6, 'grid.color': '#B0B0B0'}
     setup_style(style="whitegrid", font_size=12, labelsize=13.25, titlesize=14.5, xtick=12.5, ytick=11, dpi=300, extra_rc=grid_rc)
-    palette = ["#0486D1", "#FC6E01", "#1ABF93", "#FFC13B"]
     
-    fig, axes = plt.subplots(1, 2, figsize=(16, 3.8)) # <-- Keep your original figsize
+    # 1. Two-color palette for the histograms (Blue and Orange)
+    hist_palette = ["#0486D1", "#FC6E01"]
+    
+    # 2. Four-color palette for the scatter plot (so all 4 instances are distinguishable)
+    palette_4 = ["#0486D1", "#FC6E01", "#1ABF93", "#FFC13B"]
+    color_map_scatter = {inst: palette_4[i] for i, inst in enumerate(instances)}
+    
+    fig, axes = plt.subplots(1, 3, figsize=(16, 3.8)) 
 
     if df_all is not None:
-        # Get exact count of buckets at each size
-        df_counts = df_all.groupby(['Instance', 'num_customers']).size().reset_index(name='bucket_count')
+        df_brussels = df_all[df_all['Instance'].isin(['Brussels1', 'Brussels2'])]
+        df_flanders = df_all[df_all['Instance'].isin(['Flanders1', 'Flanders2'])]
         
-        # sns.histplot(data=df_all, x='num_customers', hue='Instance', element='step', fill=True, 
-        #                      alpha=0.8, linewidth=2.2, stat='count', kde=False, palette=palette[:len(all_data)], ax=axes[0])
-        sns.histplot(data=df_all, x='num_customers', hue='Instance', multiple='dodge', fill=True, 
-                               bins=10, alpha=0.9, linewidth=2.2, stat='count', kde=False, palette=palette[:len(all_data)], ax=axes[0])
-        #sns.scatterplot(data=df_counts, x='num_customers', y='bucket_count', hue='Instance', 
-        #                style='Instance', s=85, alpha=0.8, palette=palette[:len(all_data)], ax=axes[0])
+        # Plot (a): Brussels Distribution (Forced thin bins, Blue/Orange colors)
+        sns.histplot(data=df_brussels, x='num_customers', hue='Instance', element='step', fill=True, 
+                     alpha=0.6, linewidth=2, stat='count', kde=False, bins=40, palette=hist_palette, ax=axes[0])
         
-        # Plot (b): Scatter plot of Execution Time vs. Bucket Size
+        # Plot (b): Flanders Distribution (Forced thin bins, Blue/Orange colors)
+        sns.histplot(data=df_flanders, x='num_customers', hue='Instance', element='step', fill=True, 
+                     alpha=0.6, linewidth=2, stat='count', kde=False, bins=40, palette=hist_palette, ax=axes[1])
+
+        # Plot (c): Scatter plot of Execution Time vs. Bucket Size (All Data, 4 colors)
         sns.scatterplot(data=df_all, x='num_customers', y='execution_time', hue='Instance', 
-                        style='Instance', s=85, alpha=1, palette=palette[:len(all_data)], ax=axes[1])
+                        style='Instance', s=85, alpha=1, palette=color_map_scatter, ax=axes[2])
 
-    axes[0].set(title='(a) Bucket Size Distribution', xlabel='Bucket Size', ylabel='Number of Buckets')
-    axes[1].set(title='(b) Bucket Execution Time vs. Size', xlabel='Bucket Size', ylabel='Execution Time (s)')
+    # Titles and Labels
+    axes[0].set(title='(a) Bucket Size Distribution (Brussels)', xlabel='Bucket Size', ylabel='Number of Buckets')
+    axes[1].set(title='(b) Bucket Size Distribution (Flanders)', xlabel='Bucket Size', ylabel='Number of Buckets')
+    axes[2].set(title='(c) Execution Time vs. Size', xlabel='Bucket Size', ylabel='Execution Time (s)')
     
-    axes[0].locator_params(axis='x', nbins=4)
-    axes[1].locator_params(axis='x', nbins=4)
+    # Formatting
+    for ax in axes:
+        ax.locator_params(axis='x', nbins=4)
 
-    axes[1].legend(title='', loc='upper left', frameon=True, framealpha=0.95, facecolor='white')
-    sns.move_legend(axes[0], title='', loc='upper right', frameon=True, framealpha=0.95, facecolor='white')
+    # Legends
+    if axes[0].get_legend():
+        sns.move_legend(axes[0], title='', loc='upper right', frameon=True, framealpha=0.95, facecolor='white')
+    if axes[1].get_legend():
+        sns.move_legend(axes[1], title='', loc='upper right', frameon=True, framealpha=0.95, facecolor='white')
+    if axes[2].get_legend():
+        axes[2].legend(title='', loc='upper left', frameon=True, framealpha=0.95, facecolor='white')
 
     plt.tight_layout()
     out_pdf = './Plots/Bucket_Analysis.pdf'
@@ -229,8 +244,8 @@ def plot_ablation_analysis():
     fig, axes = plt.subplots(1, 3, figsize=(16, 4.2)) 
     
     sub_data = [
-        (axes[0], df_time, 'Execution Time (s)', '(a) Execution Time Comparison', (0.01, 4500)),
-        (axes[1], df_mem, 'Peak Memory (MB)', '(b) Peak Memory Comparison', (0.1, 50000))
+        (axes[0], df_time, 'Execution Time (s)', '(a) Execution Time Comparison', None),#(0.01, 4500)),
+        (axes[1], df_mem, 'Peak Memory (MB)', '(b) Peak Memory Comparison', None)# (0.1, 50000))
     ]
 
     # Plot Panel (a) and (b)
@@ -452,7 +467,7 @@ def plot_time_characteristics():
     xml_df['Graph Size'] = xml_df['n'].map(size_map)
 
     setup_style(style="whitegrid", font_size=14, labelsize=14, titlesize=15, xtick=12, ytick=12)
-    palette = ["#0486D1", "#FC6E01", "#01B887", "#FFC13B"]
+    palette = ["#0486D1", "#FC6E01", "#01B887", "#FFC13B"] 
         
     hue_order = ['1K(S)', '10K(L)', '100K(XXL)', '2M(XXXL)']
 
@@ -472,7 +487,7 @@ def plot_time_characteristics():
         x_order = [map_dict[k] for k in sorted(map_dict.keys()) if map_dict[k] in df_plot[col].values]
 
         sns.barplot(ax=ax, data=df_plot, x=col, y='norm_time', hue='Graph Size', hue_order=hue_order,
-                    order=x_order, palette=palette, edgecolor='black', linewidth=1, errorbar=None, saturation=1, alpha=0.9)
+                    order=x_order, palette=palette, edgecolor='black', linewidth=1, errorbar=None, saturation=1, alpha=1)
         
         ax.set(title=title, ylabel='Relative Time' if ax == axes[0] else '', xlabel='')
         ax.axhline(1.0, color='red', linestyle='--', linewidth=1, alpha=0.6)
