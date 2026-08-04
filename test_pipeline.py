@@ -137,7 +137,7 @@ def step1_script():
     print("="*60)
 
     num_executions = 5
-    rho_values = [5000]
+    rho_values = [10000]
 
     inputs_dir      = "Inputs"
     output_base_dir = "Outputs"
