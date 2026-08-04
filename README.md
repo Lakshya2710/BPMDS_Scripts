@@ -376,7 +376,7 @@ XML-style synthetic CVRP instances under `Synthetic/`, generated with the Uchoa 
 
 ### Naming
 
-  `XML<n>_<depotPos><custPos><demandType><avgRouteSize>_<instanceID>.vrp`
+`XML<n>_<depotPos><custPos><demandType><avgRouteSize>_<instanceID>.vrp`
 
 | Field | Values |
 |:------|:-------|
