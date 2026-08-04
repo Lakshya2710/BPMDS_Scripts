@@ -8,6 +8,7 @@ import seaborn as sns
 import matplotlib.ticker as ticker
 from matplotlib.patches import Patch
 from matplotlib.ticker import FuncFormatter, MaxNLocator
+from numpy.polynomial import Polynomial
 
 # ==========================================
 # 0. Global Helper for Publication Theme
@@ -61,7 +62,7 @@ def plot_bucket_analysis():
     palette_4 = ["#0486D1", "#FC6E01", "#1ABF93", "#FFC13B"]
     color_map_scatter = {inst: palette_4[i] for i, inst in enumerate(instances)}
     
-    fig, axes = plt.subplots(1, 3, figsize=(16, 3.8)) 
+    fig, axes = plt.subplots(1, 3, figsize=(16, 3.6)) 
 
     if df_all is not None:
         df_brussels = df_all[df_all['Instance'].isin(['Brussels1', 'Brussels2'])]
@@ -124,34 +125,98 @@ def plot_node_results():
     df_nodes = df.dropna(subset=['nodes']).sort_values('nodes')
     present_sizes = [s for s in ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'] if s in df_nodes['size'].unique()]
 
+    # =========================================================================
+    # CALCULATE SLOPE 'm' (POWER-LAW REGRESSION)
+    # =========================================================================
+    # Filter for valid execution times (> 0) to prevent log10 math errors
+    valid_time_df = df_nodes[df_nodes['time(sec)'] > 0]
+    log_x = np.log10(valid_time_df['nodes'])
+    log_y = np.log10(valid_time_df['time(sec)'])
+    
+    # Fit linear polynomial: log(y) = m * log(x) + c_log
+    m, c_log = np.polyfit(log_x, log_y, 1)
+    c = 10**c_log
+    
+    print("\n" + "="*45)
+    print("EMPIRICAL TIME COMPLEXITY FIT")
+    print("="*45)
+    print(f"Slope (m)     : {m:.4f}")
+    print(f"Intercept (c) : {c:.4e}")
+    print(f"Equation      : Time = {c:.4e} * Nodes^{m:.4f}")
+    print("="*45 + "\n")
+
     setup_style(style="ticks", font_size=14, labelsize=14, titlesize=15, xtick=12, ytick=12)
-    fig, axes = plt.subplots(1, 3, figsize=(16, 4))
+    fig, axes = plt.subplots(1, 3, figsize=(16, 3.8))
     scatter_kws = {'s': 80, 'edgecolor': 'black', 'linewidth': 0.8, 'alpha': 0.8}
 
     plots = [
-        ('alpha', r'(a) Optimal $\alpha$ vs. Customers', r'Optimal $\alpha$ (°)', False),
-        ('time(sec)', '(b) Execution Time vs. Customers', 'Execution Time (s)', True),
-        ('max_memory_diff(MB)', '(c) Peak Memory vs. Customers', 'Peak Memory (MB)', False)
+        ('time(sec)', '(a) Execution Time vs. Customers', 'Execution Time (s)', True),
+        ('max_memory_diff(MB)', '(b) Peak Memory vs. Customers', 'Peak Memory (MB)', False),
+        ('alpha', r'(c) Optimal $\alpha$ vs. Customers', r'Optimal $\alpha$ (°)', False)
     ]
 
     for ax, (y_col, title, ylabel, log_y) in zip(axes, plots):
         sns.scatterplot(ax=ax, data=df_nodes, x='nodes', y=y_col, hue='size', hue_order=present_sizes, palette='viridis', **scatter_kws)
         ax.set_xscale('log')
         if log_y: ax.set_yscale('log')
-        ax.set(title=title, xlabel='Number of Customers', ylabel=ylabel)
+        ax.set(title=title, xlabel='Number of Customers ($N_{{c}}$)', ylabel=ylabel)
         ax.grid(axis='y', linestyle='--', alpha=0.6)
         ax.minorticks_off()
         if ax.get_legend(): ax.get_legend().remove()
 
-    handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, 1.05), ncol=len(labels), 
-               title='Instance Size', frameon=False, fontsize=12.5, title_fontsize=12.5, columnspacing=1.0, handletextpad=0.3)
+    # =========================================================================
+    # PLOT TRENDLINE & ANNOTATION ON SUBPLOT (a)
+    # =========================================================================
+    # Generate points for the trendline across the x-axis range
+    x_trend = np.logspace(np.log10(valid_time_df['nodes'].min()), np.log10(valid_time_df['nodes'].max()), 100)
+    y_trend = c * (x_trend ** m)
+    
+    # Plot the red dashed line
+    axes[0].plot(x_trend, y_trend, color='red', linestyle='--', linewidth=2.5, zorder=1, label='Trendline')
+    
+    # Calculate a specific point on the line for the arrow to point to
+    x_arrow_target = np.percentile(valid_time_df['nodes'], 30)
+    y_arrow_target = c * (x_arrow_target ** m)
 
-    plt.tight_layout(pad=0.5, w_pad=1.0, rect=[0, 0, 1, 0.92])
+    # Add a text box highlighting the complexity with a straight arrow pointing to the line
+    #eq_text = f"Time = ${c:.2e} * N_{{c}}^{{{m:.2f}}}$"
+    mantissa, exp = f"{c:.2e}".split('e')
+    eq_text = f"Time = ${mantissa} \\times 10^{{{int(exp)}}} \\times N_{{c}}^{{{m:.2f}}}$"
+    axes[0].annotate(
+        eq_text,
+        xy=(x_arrow_target, y_arrow_target),  # Point exactly on the red dashed line
+        xycoords='data',                      # Use the actual graph coordinates for the tip
+        xytext=(0.05, 0.85),                  # Position of the text box (top left)
+        textcoords='axes fraction',           # Keep the text box pinned relative to the axes
+        fontsize=13,
+        bbox=dict(facecolor='white', edgecolor='#B0B0B0', boxstyle='round,pad=0.4', alpha=0.95),
+        arrowprops=dict(
+            arrowstyle='-|>',                 # Solid arrow head
+            color="#7E7E7E",                  # Dark grey arrow so it doesn't clash with the red line
+            linewidth=1.5                     # Removed connectionstyle to make the line straight
+        ),
+        zorder=5                              # Ensure the arrow and text draw on top of everything
+    )
+
+    # =========================================================================
+    # LEGEND HANDLING
+    # =========================================================================
+    handles, labels = axes[0].get_legend_handles_labels()
+    
+    # Filter out the 'Trendline' from the global top legend to keep it clean
+    clean_handles, clean_labels = [], []
+    for h, l in zip(handles, labels):
+        if l != 'Trendline':
+            clean_handles.append(h)
+            clean_labels.append(l)
+
+    fig.legend(clean_handles, clean_labels, loc='upper center', bbox_to_anchor=(0.5, 1.05), ncol=len(clean_labels),
+               frameon=False, fontsize=12.5, title_fontsize=12.5, columnspacing=1.0, handletextpad=0.3)
+
+    plt.tight_layout(pad=0.3, w_pad=1.0, rect=[0, 0, 1, 0.92])
     plt.savefig('./Plots/node_Results.pdf', format='pdf', bbox_inches='tight')
     plt.close(fig)
     print("Saved ./Plots/node_Results.pdf")
-
 
 def plot_parMDS():
     """Generates Speedup, Memory Efficiency, and Gap Reduction vs ParMDS bar charts."""
@@ -159,12 +224,12 @@ def plot_parMDS():
     data = [
         ('CMT4', 'S', 7.28, 0.12, 12.85, 4.99), ('Golden_18', 'S', 4.88, 0.17, 4.97, 10.26),
         ('Golden_19', 'S', 8.09, 0.49, 9.50, 6.15), ('Golden_20', 'S', 11.80, 0.67, 10.65, 4.23),
-        ('Avg S', 'S', 7.43, 0.36, 11.15, 9.16), ('Leuven2', 'M', 9.37, 79.52, 14.71, 0.18),
+        ('Avg S', 'S', 7.43, 0.36, 11.15, 9.16), ('Leuven2', 'M', 9.37, 79.52, 14.41, 0.38),
         ('Antwerp1', 'M', 30.20, 14.30, 7.27, 1.31), ('Antwerp2', 'M', 19.44, 153.11, 13.01, 0.41),
         ('Ghent1', 'M', 42.88, 231.30, 7.30, 1.24), ('Avg M', 'M', 27.17, 81.62, 11.01, 0.61),
-        ('Ghent2', 'L', 12.65, 387.12, 13.61, 0.50), ('Brussels2', 'L', 19.78, 584.78, 13.45, 0.72),
-        ('Flanders2', 'L', 24.41, 1491.93, 11.19, 0.55), ('XML250000_1173_01', 'L', 31.51, 38.88, 9.80, 0),
-        ('XML500000_1173_01', 'L', 46.91, 153.12, 12.60, 0), ('Avg L', 'L', 28.35, 705.94, 11.75, 0.59)
+        ('Ghent2', 'L', 12.65, 387.12, 13.32, 0.80), ('Brussels2', 'L', 19.78, 584.78, 13.45, 0.72),
+        ('Flanders2', 'L', 24.41, 1491.93, 11.19, 0.55), ('XML25000_1173_01', 'L', 31.51, 38.88, 9.80, 0),
+        ('XML50000_1173_01', 'L', 46.91, 153.12, 12.60, 0), ('Avg L', 'L', 28.35, 705.94, 11.75, 0.59)
     ]
 
     df = pd.DataFrame(data, columns=['Instance', 'Class', 'Speedup', 'Mem.Eff.', 'Gap(%)', 'Gap Reduced(%)'])
@@ -244,8 +309,8 @@ def plot_ablation_analysis():
     fig, axes = plt.subplots(1, 3, figsize=(16, 4.2)) 
     
     sub_data = [
-        (axes[0], df_time, 'Execution Time (s)', '(a) Execution Time Comparison', None),#(0.01, 4500)),
-        (axes[1], df_mem, 'Peak Memory (MB)', '(b) Peak Memory Comparison', None)# (0.1, 50000))
+        (axes[0], df_time, 'Execution Time (s)', '(a) Execution Time Comparison', (0.01, 4500)),
+        (axes[1], df_mem, 'Peak Memory (MB)', '(b) Peak Memory Comparison',  (0.1, 30000))
     ]
 
     # Plot Panel (a) and (b)
@@ -337,7 +402,6 @@ def plot_alpha_metrics(input_dir="Outputs/XXL", output_dir="Plots/alpha"):
         except Exception as e:
             print(f"Error processing {file_path}: {e}")
 
-
 def plot_parameter_sensitivity():
     """Generates cost gap vs rho, exec time vs rho, and speedup vs threads scaling charts."""
     print("Running plot_parameter_sensitivity...")
@@ -375,7 +439,7 @@ def plot_parameter_sensitivity():
         'S (484 nodes) Golden_12': {'color': 'black', 'marker': 's', 'linestyle': '-', 'label': 'Golden12 (S)'},
         'M (6000 nodes) Antwerp1': {'color': 'red', 'marker': 'o', 'linestyle': '--', 'label': 'Antwerp1 (M)'},
         'L (15,000 nodes) Brussels1': {'color': 'blue', 'marker': 'v', 'linestyle': '-', 'label': 'Brussels1 (L)'},
-        'XL (100,000 nodes)': {'color': '#2ca02c', 'marker': '*', 'linestyle': '-', 'label': 'XML-100k (XXL)'},
+        'XL (100,000 nodes)': {'color': '#2ca02c', 'marker': '*', 'linestyle': '-', 'label': 'XML-100k (XL)'},
         'XXXL (2M nodes)': {'color': '#9467bd', 'marker': 'd', 'linestyle': '-.', 'label': 'XML-2M (XXXL)'} 
     }
 
@@ -393,7 +457,7 @@ def plot_parameter_sensitivity():
                          linewidth=1.5, markersize=5, markeredgecolor='black', label=st['label'])
         except Exception: pass
 
-    axes[0].set(title=r'(a) Gap vs. $\rho$', xlabel=r'$\rho$', ylabel='Gap to BKS (%)')
+    axes[0].set(title=r'(a) Gap vs. $\rho$', xlabel=r'Exploration Parameter $\rho$', ylabel='Gap to BKS (%)')
     axes[0].set_xscale('log')
     axes[0].set_ylim(4, 23)
 
@@ -407,7 +471,7 @@ def plot_parameter_sensitivity():
                          linestyle=st['linestyle'], linewidth=1.5, markersize=5, markeredgecolor='black', label=st['label'])
         except Exception: pass
 
-    axes[1].set(title=r'(b) Execution Time vs. $\rho$', xlabel=r'$\rho$', ylabel='Execution Time (s)')
+    axes[1].set(title=r'(b) Execution Time vs. $\rho$', xlabel=r'Exploration Parameter $\rho$', ylabel='Execution Time (s)')
     axes[1].set_yscale('log')
     axes[1].set_xscale('log')
     axes[1].set_ylim(0.01, 50000)
@@ -415,7 +479,8 @@ def plot_parameter_sensitivity():
     for ax in (axes[0], axes[1]):
         ax.minorticks_off()
         ax.grid(axis='y', linestyle='--', alpha=0.7)
-        ax.legend(loc='upper left', fontsize=11, frameon=True, framealpha=0.8, edgecolor='black', borderpad=0.3, labelspacing=0.2)
+        # Removed edgecolor='black' to use default light border
+        ax.legend(loc='upper left', fontsize=11, frameon=True, framealpha=0.8, borderpad=0.3, labelspacing=0.2)
 
     # Panel (c): Speedup vs Threads
     for filepath, label in scaling_instances.items():
@@ -434,7 +499,9 @@ def plot_parameter_sensitivity():
     axes[2].set_ylim(0, 27)
     axes[2].minorticks_off()
     axes[2].grid(axis='y', linestyle='--', alpha=0.7)
-    axes[2].legend(loc='upper left', ncol=2, fontsize=11, frameon=True, framealpha=0.8, edgecolor='black', columnspacing=0.5, borderpad=0.3, labelspacing=0.2, handletextpad=0.3)
+    
+    # Removed edgecolor='black' to use default light border
+    axes[2].legend(loc='upper left', ncol=2, fontsize=11, frameon=True, framealpha=0.8, columnspacing=0.5, borderpad=0.3, labelspacing=0.2, handletextpad=0.3)
 
     plt.tight_layout(pad=0.5, w_pad=1.0, h_pad=1.5)
     out_path = './Plots/Parameter_sensitivity.pdf'
@@ -442,12 +509,11 @@ def plot_parameter_sensitivity():
     plt.close(fig)
     print(f"Generated {out_path}")
 
-
 def plot_time_characteristics():
     """Generates execution time breakdowns according to route size, depot, and customer distributions."""
     print("Running plot_time_characteristics...")
     try:
-        df = pd.read_csv('Outputs/Outputs.csv')
+        df = pd.read_csv('char.csv')
     except FileNotFoundError:
         print("Warning: csv not found.")
         return
@@ -457,7 +523,7 @@ def plot_time_characteristics():
     xml_df = xml_df.dropna(subset=['n'])
     xml_df['n'] = xml_df['n'].astype(int)
 
-    size_map = {1000: '1K(S)', 10000: '10K(L)', 100000: '100K(XXL)', 2000000: '2M(XXXL)'}
+    size_map = {1000: '1K(S)', 10000: '10K(L)', 100000: '100K(XL)', 2000000: '2M(XXXL)'}
     depot_map = {1: 'Random', 2: 'Centered', 3: 'Cornered'}
     cust_map = {1: 'Random', 2: 'Clustered', 3: 'Random-Clustered'}
     demand_map = {2: 'Small, Large Var.', 3: 'Small, Small Var.', 4: 'Large, Large Var.', 
@@ -467,9 +533,8 @@ def plot_time_characteristics():
     xml_df['Graph Size'] = xml_df['n'].map(size_map)
 
     setup_style(style="whitegrid", font_size=14, labelsize=14, titlesize=15, xtick=12, ytick=12)
-    palette = ["#0486D1", "#FC6E01", "#01B887", "#FFC13B"] 
-        
-    hue_order = ['1K(S)', '10K(L)', '100K(XXL)', '2M(XXXL)']
+    palette = ["#0486D1", "#FC6E01", "#01B887", "#FFC13B"]  
+    hue_order = ['1K(S)', '10K(L)', '100K(XL)', '2M(XXXL)']
 
     fig, axes = plt.subplots(1, 4, figsize=(16, 4), gridspec_kw={'width_ratios': [6, 3.75, 3.75, 6]})
 
@@ -487,7 +552,7 @@ def plot_time_characteristics():
         x_order = [map_dict[k] for k in sorted(map_dict.keys()) if map_dict[k] in df_plot[col].values]
 
         sns.barplot(ax=ax, data=df_plot, x=col, y='norm_time', hue='Graph Size', hue_order=hue_order,
-                    order=x_order, palette=palette, edgecolor='black', linewidth=1, errorbar=None, saturation=1, alpha=1)
+                    order=x_order, palette=palette, edgecolor='black', linewidth=1, errorbar=None, saturation=1, alpha=0.9)
         
         ax.set(title=title, ylabel='Relative Time' if ax == axes[0] else '', xlabel='')
         ax.axhline(1.0, color='red', linestyle='--', linewidth=1, alpha=0.6)
@@ -498,7 +563,7 @@ def plot_time_characteristics():
     handles, labels = axes[0].get_legend_handles_labels()
     fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, 0.99), ncol=4, frameon=False, fontsize=15, columnspacing=3.0, handletextpad=0.5)
 
-    plt.tight_layout(w_pad=0.4, rect=[0, 0, 1, 0.90])
+    plt.tight_layout(w_pad=0.3, rect=[0, 0, 1, 0.90])
     plt.subplots_adjust(wspace=0.2, top=0.77)
     out_path = './Plots/time_plot.pdf'
     plt.savefig(out_path, format='pdf', bbox_inches='tight')
